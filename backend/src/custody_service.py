@@ -1,16 +1,19 @@
 from sqlalchemy import select
 from fastapi import HTTPException
-from .models import SampleInterval,Seal,Custody
+from .models import SampleInterval,Seal,Custody,Stratum,Interpretation
 from .common import hole,get,pack,audit,now
 
 def context(s,id):
     ref=get(s,SampleInterval,id);hole(s,ref.borehole_id);return get(s,SampleInterval,id,True)
+def seal_snapshot(s,sample):
+    st=get(s,Stratum,sample.stratum_id);it=get(s,Interpretation,st.interpretation_id)
+    return {**pack(sample),'stratum':pack(st),'interpretation_id':it.id,'interpretation_state':it.state}
 def seal(s,p,u):
     sample=context(s,p.sample_id)
     if sample.state not in ['planned','broken']:raise HTTPException(409,'仅待封样或破签待重封样可封签')
     old=s.scalar(select(Seal).where(Seal.sample_id==sample.id).order_by(Seal.id.desc()))
     if old and (old.state!='broken' or len(p.reason)<8):raise HTTPException(409,'重封须保留破签旧链并写至少8字重封依据')
-    x=Seal(sample_id=sample.id,code=p.code,previous_id=old.id if old else None,reason=p.reason,sealed_by=u['email'],snapshot=pack(sample));s.add(x);sample.state='sealed';s.flush();audit(s,u,'样袋封签 '+p.code);return pack(x)
+    x=Seal(sample_id=sample.id,code=p.code,previous_id=old.id if old else None,reason=p.reason,sealed_by=u['email'],snapshot=seal_snapshot(s,sample));s.add(x);sample.state='sealed';s.flush();audit(s,u,'样袋封签 '+p.code);return pack(x)
 def break_seal(s,id,p,u):
     ref=get(s,Seal,id);sample=context(s,ref.sample_id);x=get(s,Seal,id,True)
     latest=s.scalar(select(Seal.id).where(Seal.sample_id==sample.id).order_by(Seal.id.desc()))

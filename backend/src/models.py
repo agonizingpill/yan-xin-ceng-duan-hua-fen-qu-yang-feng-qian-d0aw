@@ -50,6 +50,17 @@ class MissingInterval(Base):
     end_m:Mapped[float]=mapped_column(Float)
     reason:Mapped[str]=mapped_column(String(600),default='')
     state:Mapped[str]=mapped_column(String(20),default='observed')
+class VelocityCorrection(Base):
+    __tablename__='velocity_corrections'
+    __table_args__=(CheckConstraint('start_m>=0 AND end_m>start_m AND delta_m_s<>0'),)
+    id:Mapped[int]=mapped_column(primary_key=True)
+    borehole_id:Mapped[int]=mapped_column(ForeignKey('boreholes.id'))
+    start_m:Mapped[float]=mapped_column(Float)
+    end_m:Mapped[float]=mapped_column(Float)
+    delta_m_s:Mapped[float]=mapped_column(Float)
+    reason:Mapped[str]=mapped_column(String(600))
+    created_by:Mapped[str]=mapped_column(String(120),default='')
+    at:Mapped[str]=mapped_column(String(40),default='')
 class Interpretation(Base):
     __tablename__='interpretations'
     id:Mapped[int]=mapped_column(primary_key=True)

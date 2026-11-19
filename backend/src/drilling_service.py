@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from fastapi import HTTPException
-from .models import CoreRun,Reading,MissingInterval,Interpretation
-from .common import hole,get,pack,audit,interval,overlaps
+from .models import CoreRun,Reading,MissingInterval,Interpretation,VelocityCorrection
+from .common import hole,get,pack,audit,now,interval,overlaps
 
 def mutable_readings(s,h):
     if s.scalar(select(Interpretation.id).where(Interpretation.borehole_id==h.id,Interpretation.state.in_(['queued','ready','confirmed']))):raise HTTPException(409,'已有排队或已确认层段，不能改测点；请先撤销未取样的解释')
@@ -27,3 +27,14 @@ def annotate(s,id,p,u):
     ref=get(s,MissingInterval,id);hole(s,ref.borehole_id);x=get(s,MissingInterval,id,True)
     if x.state=='annotated':raise HTTPException(409,'缺段说明已签记，不可重复覆盖')
     x.reason=p.reason;x.state='annotated';audit(s,u,'补记缺芯原因');return pack(x)
+def correct(s,p,u):
+    h=hole(s,p.borehole_id);interval(p.start_m,p.end_m,h.total_depth)
+    if abs(p.delta_m_s)<1e-9:raise HTTPException(409,'声速修正量不能为0')
+    if s.scalar(select(Interpretation.id).where(Interpretation.borehole_id==h.id,Interpretation.state.in_(['queued','ready']))):raise HTTPException(409,'已有排队或待批层段，须先完成或撤销再登记声速修正')
+    for c in s.scalars(select(VelocityCorrection).where(VelocityCorrection.borehole_id==h.id)):
+        if overlaps(c.start_m,c.end_m,p.start_m,p.end_m):raise HTTPException(409,'声速修正区间不可与已登记区间重叠')
+    x=VelocityCorrection(**p.model_dump(),created_by=u['email'],at=now());s.add(x);s.flush();audit(s,u,'登记声速修正 '+str(p.start_m)+'—'+str(p.end_m)+'m / '+str(p.delta_m_s)+'m/s');return pack(x)
+def corrected(rows,corrections):
+    """校正副本用于拟合；传给这里的原始读数 dict 不会被改动。"""
+    from .calibration import apply_corrections
+    return apply_corrections(rows,corrections)

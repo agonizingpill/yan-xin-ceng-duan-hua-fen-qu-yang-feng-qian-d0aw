@@ -1,6 +1,6 @@
 from sqlalchemy import select
 from fastapi import HTTPException
-from .models import CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision
+from .models import CoreRun,Reading,MissingInterval,VelocityCorrection,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision
 from .common import hole,get,pack,audit
 
 def create(s,p,u):
@@ -22,9 +22,10 @@ def freeze(s,id,u):
     while depth<h.total_depth:
         if not any(abs(r.depth_m-depth)<1e-6 for r in points)and not any(m.start_m<=depth<m.end_m for m in missing):raise HTTPException(409,'存在未标注的缺失测段 '+str(depth)+'m')
         depth+=1
-    i=s.scalar(select(Interpretation).where(Interpretation.borehole_id==h.id,Interpretation.state=='confirmed'))
+    i=s.scalar(select(Interpretation).where(Interpretation.borehole_id==h.id,Interpretation.state=='confirmed').order_by(Interpretation.id.desc()))
     if not i:raise HTTPException(409,'须主管确认人工层段')
     samples=s.scalars(select(SampleInterval).where(SampleInterval.borehole_id==h.id,SampleInterval.state!='cancelled')).all()
     if any(v.state!='transferred'for v in samples):raise HTTPException(409,'尚有未完整封签交接样袋，不能冻结')
     ids=[v.id for v in samples];seals=s.scalars(select(Seal).where(Seal.sample_id.in_(ids))).all()if ids else[];sealids=[v.id for v in seals];cust=s.scalars(select(Custody).where(Custody.seal_id.in_(sealids))).all()if sealids else[]
-    x.snapshot={'borehole':pack(h),'runs':[pack(v)for v in runs],'readings':[pack(v)for v in points],'missing':[pack(v)for v in missing],'interpretation':pack(i),'strata':[pack(v)for v in s.scalars(select(Stratum).where(Stratum.interpretation_id==i.id))],'samples':[pack(v)for v in samples],'seals':[pack(v)for v in seals],'custodies':[pack(v)for v in cust]};x.state='frozen';x.frozen_by=u['email'];h.state='frozen';audit(s,u,'冻结柱状图 '+h.code+' '+x.version);return pack(x)
+    corrections=[pack(v)for v in s.scalars(select(VelocityCorrection).where(VelocityCorrection.borehole_id==h.id).order_by(VelocityCorrection.start_m))]
+    x.snapshot={'borehole':pack(h),'runs':[pack(v)for v in runs],'readings':[pack(v)for v in points],'missing':[pack(v)for v in missing],'velocity_corrections':corrections,'interpretation':pack(i),'strata':[pack(v)for v in s.scalars(select(Stratum).where(Stratum.interpretation_id==i.id))],'samples':[pack(v)for v in samples],'seals':[pack(v)for v in seals],'custodies':[pack(v)for v in cust]};x.state='frozen';x.frozen_by=u['email'];h.state='frozen';audit(s,u,'冻结柱状图 '+h.code+' '+x.version);return pack(x)

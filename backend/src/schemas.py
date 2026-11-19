@@ -24,6 +24,12 @@ class MissingInput(Clean):
     start_m:float=Field(ge=0)
     end_m:float=Field(gt=0)
     reason:str=Field(default='',max_length=600)
+class VelocityCorrectionInput(Clean):
+    borehole_id:int
+    start_m:float=Field(ge=0)
+    end_m:float=Field(gt=0)
+    delta_m_s:float=Field(ge=-4000,le=4000)
+    reason:str=Field(min_length=8,max_length=600)
 class Reason(Clean):reason:str=Field(min_length=8,max_length=600)
 class BoreholeRef(Clean):borehole_id:int
 class LayerInput(Clean):
